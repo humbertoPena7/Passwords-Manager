@@ -5,6 +5,7 @@ import random
 import string
 import re
 from cryptography.fernet import Fernet
+from database import database_connection  # Importación de la BASE DE DATOS
 
 
 class VaultManager:
@@ -22,39 +23,119 @@ class VaultManager:
         self.salt = None
         self.cipher_suite = None
         self.vault_data = []
-        self.next_id = 1
+        self.current_user_id = 1  # Fijo temporalmente para no tocar el login
 
     # --- AUTENTICACIÓN Y CIFRADO ---
     def authenticate(self, password):
-        """Valida el login o registra la clave maestra si es la primera vez."""
+        """Valida el login y carga los datos desde PostgreSQL."""
         if self.master_hash is None:
-            self.salt = os.urandom(16)
+
+            self.salt = b'1234567890123456' #token de 16 bytes fijo (es temporal)
+
             self.master_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), self.salt, 100000)
             fernet_key = base64.urlsafe_b64encode(hashlib.pbkdf2_hmac('sha256', password.encode(), self.salt, 100000))
             self.cipher_suite = Fernet(fernet_key)
+            self.load_data_from_db()  # Cargamos de la BD al entrar
             return True
         else:
             test_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), self.salt, 100000)
-            return test_hash == self.master_hash
+            if test_hash == self.master_hash:
+                self.load_data_from_db()
+                return True
+            return False
 
     def decrypt(self, encrypted_password):
+        # Fernet puede recibir strings o bytes
+        if isinstance(encrypted_password, str):
+            encrypted_password = encrypted_password.encode('utf-8')
         return self.cipher_suite.decrypt(encrypted_password).decode()
 
-    # --- GESTIÓN DE DATOS (CRUD) ---
+    # --- GESTIÓN DE DATOS (CRUD CON POSTGRESQL) ---
+    def load_data_from_db(self):
+        """Obtiene las contraseñas de la base de datos y las pone en memoria para la UI."""
+        conn = database_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT password_id, website, email, password FROM password WHERE user_id = %s",
+                    (self.current_user_id,)
+                )
+                records = cursor.fetchall()
+                self.vault_data = []
+                for row in records:
+                    self.vault_data.append({
+                        'id': row[0],
+                        'site': row[1],
+                        'username': row[2],
+                        'password': row[3]  # Contraseña cifrada en la BD
+                    })
+            finally:
+                cursor.close()
+                conn.close()
+
     def add_record(self, site, username, password):
-        enc_p = self.cipher_suite.encrypt(password.encode())
-        self.vault_data.append({'id': self.next_id, 'site': site, 'username': username, 'password': enc_p})
-        self.next_id += 1
+        # Ciframos y convertimos a string para guardar en VARCHAR(100)
+        enc_p = self.cipher_suite.encrypt(password.encode()).decode('utf-8')
+
+        conn = database_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO password (user_id, password, email, website)
+                    VALUES (%s, %s, %s, %s) RETURNING password_id
+                    """,
+                    (self.current_user_id, enc_p, username, site)
+                )
+                new_id = cursor.fetchone()[0]
+                conn.commit()
+                # Actualizamos la memoria para que la UI lo vea al instante
+                self.vault_data.append({'id': new_id, 'site': site, 'username': username, 'password': enc_p})
+            finally:
+                cursor.close()
+                conn.close()
 
     def update_record(self, rid, site, username, password):
-        enc_p = self.cipher_suite.encrypt(password.encode())
-        for r in self.vault_data:
-            if r['id'] == rid:
-                r.update({'site': site, 'username': username, 'password': enc_p})
-                break
+        enc_p = self.cipher_suite.encrypt(password.encode()).decode('utf-8')
+
+        conn = database_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE password SET website = %s, email = %s, password = %s
+                    WHERE password_id = %s AND user_id = %s
+                    """,
+                    (site, username, enc_p, rid, self.current_user_id)
+                )
+                conn.commit()
+                # Actualizamos la memoria
+                for r in self.vault_data:
+                    if r['id'] == rid:
+                        r.update({'site': site, 'username': username, 'password': enc_p})
+                        break
+            finally:
+                cursor.close()
+                conn.close()
 
     def delete_record(self, rid):
-        self.vault_data = [r for r in self.vault_data if r['id'] != rid]
+        conn = database_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM password WHERE password_id = %s AND user_id = %s",
+                    (rid, self.current_user_id)
+                )
+                conn.commit()
+                # Removemos de la memoria
+                self.vault_data = [r for r in self.vault_data if r['id'] != rid]
+            finally:
+                cursor.close()
+                conn.close()
 
     # --- REGLAS DE NEGOCIO (NIST Y GENERADOR) ---
     @staticmethod
