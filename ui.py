@@ -1,8 +1,8 @@
 import customtkinter as ctk
 import pyperclip
 from tkinter import messagebox
+import auth
 
-# Configuración visual compartida
 FONT_H1 = ("Segoe UI", 28, "bold")
 FONT_H2 = ("Segoe UI", 20, "bold")
 FONT_BOLD = ("Segoe UI", 14, "bold")
@@ -11,45 +11,119 @@ FONT_SMALL = ("Segoe UI", 12)
 CARD_COLOR = ("gray90", "gray13")
 
 
-class LoginView(ctk.CTkFrame):
-    def __init__(self, master, vault, on_success):
+class AuthView(ctk.CTkFrame):
+    def __init__(self, master, db_connection, on_login_success):
         super().__init__(master, fg_color="transparent")
-        self.vault = vault
-        self.on_success = on_success
+        self.db_connection = db_connection
+        self.on_login_success = on_login_success
 
-        card = ctk.CTkFrame(self, width=450, height=400, corner_radius=20, fg_color=CARD_COLOR)
+        card = ctk.CTkFrame(self, width=450, height=550, corner_radius=20, fg_color=CARD_COLOR)
         card.place(relx=0.5, rely=0.5, anchor="center")
         card.pack_propagate(False)
 
-        ctk.CTkLabel(card, text="PassManager Pro", font=FONT_H1).pack(pady=(40, 10))
-        ctk.CTkLabel(card, text="Acceso a la Bóveda de Seguridad", font=FONT_REGULAR, text_color="gray").pack(
-            pady=(0, 30))
+        ctk.CTkLabel(card, text="PassManager Pro", font=FONT_H1).pack(pady=(30, 5))
+        ctk.CTkLabel(card, text="Acceso a la Bóveda", font=FONT_REGULAR, text_color="gray").pack(pady=(0, 15))
 
-        pwd_frame = ctk.CTkFrame(card, fg_color="transparent")
-        pwd_frame.pack(pady=10, padx=40, fill="x")
+        self.tabview = ctk.CTkTabview(card, width=380, height=400)
+        self.tabview.pack(padx=20, pady=10, fill="both", expand=True)
 
-        self.pwd_entry = ctk.CTkEntry(pwd_frame, placeholder_text="Contraseña Maestra", show="*", height=45,
-                                      font=FONT_REGULAR)
-        self.pwd_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.tab_login = self.tabview.add("Iniciar Sesión")
+        self.tab_register = self.tabview.add("Registrarse")
 
-        self.show_btn = ctk.CTkButton(pwd_frame, text="Ver", width=50, height=45, fg_color="transparent",
-                                      border_width=1, command=self.toggle_pwd)
-        self.show_btn.pack(side="right")
+        self.construir_login()
+        self.construir_registro()
 
-        ctk.CTkButton(card, text="Desbloquear / Registrar", height=45, font=FONT_BOLD, command=self.auth).pack(
-            pady=(30, 20), padx=40, fill="x")
+    def construir_login(self):
+        ctk.CTkLabel(self.tab_login, text="Correo Electrónico", font=FONT_BOLD).pack(anchor="w", padx=20, pady=(20, 5))
+        self.login_email = ctk.CTkEntry(self.tab_login, height=40, font=FONT_REGULAR,
+                                        placeholder_text="ejemplo@correo.com")
+        self.login_email.pack(fill="x", padx=20)
 
-    def toggle_pwd(self):
-        is_hidden = self.pwd_entry.cget("show") == "*"
-        self.pwd_entry.configure(show="" if is_hidden else "*")
-        self.show_btn.configure(text="Ocultar" if is_hidden else "Ver")
+        ctk.CTkLabel(self.tab_login, text="Contraseña", font=FONT_BOLD).pack(anchor="w", padx=20, pady=(15, 5))
 
-    def auth(self):
-        pwd = self.pwd_entry.get()
-        if pwd and self.vault.authenticate(pwd):
-            self.on_success()
-        elif pwd:
-            messagebox.showerror("Error", "La contraseña maestra es incorrecta.")
+        pwd_frame = ctk.CTkFrame(self.tab_login, fg_color="transparent")
+        pwd_frame.pack(fill="x", padx=20)
+
+        self.login_pwd = ctk.CTkEntry(pwd_frame, height=40, font=FONT_REGULAR, show="*",
+                                      placeholder_text="Tu contraseña")
+        self.login_pwd.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        self.btn_show_login = ctk.CTkButton(pwd_frame, text="Ver", width=50, height=40, fg_color="transparent",
+                                            border_width=1, command=self.toggle_login_pwd)
+        self.btn_show_login.pack(side="right")
+
+        ctk.CTkButton(self.tab_login, text="Entrar", height=45, font=FONT_BOLD, command=self.procesar_login).pack(
+            pady=(40, 20), padx=20, fill="x")
+
+    def construir_registro(self):
+        ctk.CTkLabel(self.tab_register, text="Nombre", font=FONT_BOLD).pack(anchor="w", padx=20, pady=(10, 5))
+        self.reg_nombre = ctk.CTkEntry(self.tab_register, height=40, font=FONT_REGULAR, placeholder_text="Tu nombre")
+        self.reg_nombre.pack(fill="x", padx=20)
+
+        ctk.CTkLabel(self.tab_register, text="Correo Electrónico", font=FONT_BOLD).pack(anchor="w", padx=20,
+                                                                                        pady=(10, 5))
+        self.reg_email = ctk.CTkEntry(self.tab_register, height=40, font=FONT_REGULAR,
+                                      placeholder_text="ejemplo@correo.com")
+        self.reg_email.pack(fill="x", padx=20)
+
+        ctk.CTkLabel(self.tab_register, text="Contraseña", font=FONT_BOLD).pack(anchor="w", padx=20, pady=(10, 5))
+
+        reg_pwd_frame = ctk.CTkFrame(self.tab_register, fg_color="transparent")
+        reg_pwd_frame.pack(fill="x", padx=20)
+
+        self.reg_pwd = ctk.CTkEntry(reg_pwd_frame, height=40, font=FONT_REGULAR, show="*",
+                                    placeholder_text="Crea una contraseña")
+        self.reg_pwd.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        self.btn_show_reg = ctk.CTkButton(reg_pwd_frame, text="Ver", width=50, height=40, fg_color="transparent",
+                                          border_width=1, command=self.toggle_reg_pwd)
+        self.btn_show_reg.pack(side="right")
+
+        ctk.CTkButton(self.tab_register, text="Crear Cuenta", height=45, font=FONT_BOLD,
+                      command=self.procesar_registro).pack(pady=(30, 20), padx=20, fill="x")
+
+    def toggle_login_pwd(self):
+        is_hidden = self.login_pwd.cget("show") == "*"
+        self.login_pwd.configure(show="" if is_hidden else "*")
+        self.btn_show_login.configure(text="Ocultar" if is_hidden else "Ver")
+
+    def toggle_reg_pwd(self):
+        is_hidden = self.reg_pwd.cget("show") == "*"
+        self.reg_pwd.configure(show="" if is_hidden else "*")
+        self.btn_show_reg.configure(text="Ocultar" if is_hidden else "Ver")
+
+    def procesar_login(self):
+        correo = self.login_email.get()
+        contrasena = self.login_pwd.get()
+        if not correo or not contrasena:
+            messagebox.showwarning("Campos vacíos", "Por favor ingresa tu correo y contraseña.")
+            return
+
+        exito, resultado = auth.iniciar_sesion(self.db_connection, correo, contrasena)
+        if exito:
+            # Enviamos el ID y la contraseña plana para que el backend construya la llave Fernet
+            self.on_login_success(resultado, contrasena)
+        else:
+            messagebox.showerror("Error de Acceso", resultado)
+
+    def procesar_registro(self):
+        nombre = self.reg_nombre.get()
+        correo = self.reg_email.get()
+        contrasena = self.reg_pwd.get()
+        if not nombre or not correo or not contrasena:
+            messagebox.showwarning("Campos vacíos", "Por favor llena todos los campos para registrarte.")
+            return
+
+        exito, mensaje = auth.registrar_usuario(self.db_connection, nombre, correo, contrasena)
+        if exito:
+            messagebox.showinfo("Éxito", mensaje)
+            self.reg_nombre.delete(0, 'end')
+            self.reg_email.delete(0, 'end')
+            self.reg_pwd.delete(0, 'end')
+            self.tabview.set("Iniciar Sesión")
+            self.login_email.insert(0, correo)
+        else:
+            messagebox.showerror("Error de Registro", mensaje)
 
 
 class ListingsView(ctk.CTkFrame):
@@ -83,13 +157,11 @@ class ListingsView(ctk.CTkFrame):
             card.pack(fill="x", pady=6, padx=5)
             for i, weight in enumerate([2, 3, 1, 0]): card.columnconfigure(i, weight=weight)
 
-            # Info
             info_sub = ctk.CTkFrame(card, fg_color="transparent")
             info_sub.grid(row=0, column=0, sticky="w", padx=15, pady=8)
             ctk.CTkLabel(info_sub, text=rec['site'], font=FONT_BOLD).pack(anchor="w")
             ctk.CTkLabel(info_sub, text=rec['username'], font=FONT_SMALL, text_color="gray").pack(anchor="w")
 
-            # Contraseña
             pwd_sub = ctk.CTkFrame(card, fg_color="transparent")
             pwd_sub.grid(row=0, column=1, sticky="w", padx=10, pady=8)
             ctk.CTkLabel(pwd_sub, text="Contraseña", font=FONT_SMALL, text_color="gray").pack(anchor="w")
@@ -103,13 +175,11 @@ class ListingsView(ctk.CTkFrame):
             toggle_btn.pack(side="left", padx=10)
             toggle_btn.configure(command=self.make_toggle(pwd_lbl, toggle_btn, decrypted))
 
-            # Seguridad
             sec_sub = ctk.CTkFrame(card, fg_color="transparent")
             sec_sub.grid(row=0, column=2, sticky="w", padx=10, pady=8)
             ctk.CTkLabel(sec_sub, text="Seguridad", font=FONT_SMALL, text_color="gray").pack(anchor="w")
             ctk.CTkLabel(sec_sub, text=label_text, text_color=color, font=FONT_BOLD).pack(anchor="w")
 
-            # Acciones
             act_sub = ctk.CTkFrame(card, fg_color="transparent")
             act_sub.grid(row=0, column=3, sticky="e", padx=15, pady=8)
             ctk.CTkButton(act_sub, text="Copiar", width=60, font=FONT_BOLD,
@@ -123,10 +193,10 @@ class ListingsView(ctk.CTkFrame):
     def make_toggle(self, lbl, btn, secret):
         def _toggle():
             if lbl.cget("text") == "••••••••••••":
-                lbl.configure(text=secret);
+                lbl.configure(text=secret)
                 btn.configure(text="Ocultar")
             else:
-                lbl.configure(text="••••••••••••");
+                lbl.configure(text="••••••••••••")
                 btn.configure(text="Mostrar")
 
         return _toggle
@@ -209,8 +279,8 @@ class FormView(ctk.CTkFrame):
     def update_meter(self, *args):
         p = self.p_e.get()
         if not p:
-            self.bar.set(0);
-            self.lbl_sec.configure(text="Seguridad: -", text_color="gray");
+            self.bar.set(0)
+            self.lbl_sec.configure(text="Seguridad: -", text_color="gray")
             return
         score, color, label = self.vault.check_strength(p)
         self.bar.set(score)
@@ -220,14 +290,20 @@ class FormView(ctk.CTkFrame):
     def save(self):
         s, u, p = self.s_e.get(), self.u_e.get(), self.p_e.get()
         if not all([s, u, p]):
-            messagebox.showwarning("Incompleto", "Todos los campos son requeridos.");
+            messagebox.showwarning("Incompleto", "Todos los campos son requeridos.")
             return
 
+        exito = False
         if self.record:
-            self.vault.update_record(self.record['id'], s, u, p)
+            exito = self.vault.update_record(self.record['id'], s, u, p)
         else:
-            self.vault.add_record(s, u, p)
-        self.navigate_back()
+            exito = self.vault.add_record(s, u, p)
+
+        if exito:
+            self.navigate_back()
+        else:
+            messagebox.showerror("Error Interno",
+                                 "No se pudo guardar la contraseña en la base de datos.")
 
 
 class GeneratorView(ctk.CTkFrame):
@@ -291,11 +367,11 @@ class GeneratorView(ctk.CTkFrame):
     def update_meter(self, *args):
         p = self.res.get()
         if not p:
-            self.bar.set(0);
-            self.lbl_sec.configure(text="Seguridad: -", text_color="gray");
+            self.bar.set(0)
+            self.lbl_sec.configure(text="Seguridad: -", text_color="gray")
             return
         score, color, label = self.vault.check_strength(p)
-        self.bar.set(score);
+        self.bar.set(score)
         self.bar.configure(progress_color=color)
         self.lbl_sec.configure(text=f"Seguridad: {label}", text_color=color)
 
@@ -317,6 +393,6 @@ class GeneratorView(ctk.CTkFrame):
             self.v_up.get(), self.v_lo.get(), self.v_nu.get(), self.v_sy.get()
         )
         if not pwd: messagebox.showwarning("Error", "Selecciona caracteres."); return
-        self.res.delete(0, 'end');
+        self.res.delete(0, 'end')
         self.res.insert(0, pwd)
         self.update_meter()
