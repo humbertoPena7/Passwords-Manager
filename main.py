@@ -1,14 +1,15 @@
 import customtkinter as ctk
+from database import database_connection
 from backend import VaultManager
-from ui import LoginView, ListingsView, FormView, GeneratorView
+from ui import AuthView, ListingsView, FormView, GeneratorView
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
+"""QUERY PARA LIMPIAR TABLAS"""
+# TRUNCATE TABLE password, "user" CASCADE;
 
 class AppController(ctk.CTk):
-    """Enruta y coordina la lógica de la bóveda con las vistas visuales."""
-
     def __init__(self):
         super().__init__()
         self.title("PassManager Pro")
@@ -16,39 +17,41 @@ class AppController(ctk.CTk):
         self.resizable(False, True)
         self.minsize(1100, 600)
 
-        # Instancia única del backend (Datos y Seguridad)
-        self.vault = VaultManager()
+        self.conexion = database_connection()
+        if not self.conexion:
+            self.destroy()
+            return
 
-        # Contenedor principal
+        self.vault = None
+
         self.main_container = ctk.CTkFrame(self, fg_color="transparent")
         self.main_container.pack(fill="both", expand=True)
 
-        self.current_view = None
-        self.show_login()
+        self.mostrar_auth()
 
-    def clear_container(self, container):
+    def limpiar_contenedor(self, container):
         for widget in container.winfo_children(): widget.destroy()
 
-    # --- RUTAS PRINCIPALES ---
-    def show_login(self):
-        self.clear_container(self.main_container)
-        # Inyecta el Vault y el Callback de éxito en la vista
-        LoginView(self.main_container, self.vault, on_success=self.show_dashboard).pack(fill="both", expand=True)
+    def mostrar_auth(self):
+        self.limpiar_contenedor(self.main_container)
+        AuthView(self.main_container, self.conexion, self.login_exitoso).pack(fill="both", expand=True)
 
-    def show_dashboard(self):
-        self.clear_container(self.main_container)
+    def login_exitoso(self, user_id, master_password):
+        # Iniciamos el VaultManager con el ID y la contraseña maestra plana
+        self.vault = VaultManager(self.conexion, user_id, master_password)
+        self.mostrar_dashboard()
 
-        # Sidebar estático
+    def mostrar_dashboard(self):
+        self.limpiar_contenedor(self.main_container)
+
         sidebar = ctk.CTkFrame(self.main_container, width=220, corner_radius=0, fg_color=("gray90", "gray13"))
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
         ctk.CTkLabel(sidebar, text="PassManager", font=("Segoe UI", 20, "bold")).pack(pady=(40, 40))
 
-        # Área de contenido dinámico
         self.content_area = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.content_area.pack(side="right", fill="both", expand=True, padx=30, pady=30)
 
-        # Navegación
         self.nav_btns = []
 
         def nav(btn, view_func):
@@ -67,25 +70,23 @@ class AppController(ctk.CTk):
         btn_list = create_btn("Bóveda de Claves", self.nav_to_list)
         create_btn("Agregar Credencial", lambda: self.nav_to_form(None))
         create_btn("Generador Seguro", self.nav_to_generator)
-        ctk.CTkButton(sidebar, text="Cerrar Sesión", fg_color="transparent", border_width=1, border_color="#E74C3C",
-                      text_color="#E74C3C", command=self.show_login).pack(side="bottom", pady=30, padx=20, fill="x")
 
-        # Iniciar en la lista
+        ctk.CTkButton(sidebar, text="Cerrar Sesión", fg_color="transparent", border_width=1, border_color="#E74C3C",
+                      text_color="#E74C3C", command=self.mostrar_auth).pack(side="bottom", pady=30, padx=20, fill="x")
+
         nav(btn_list, self.nav_to_list)
 
-    # --- SUB-RUTAS (CARGAN EN CONTENT_AREA) ---
     def nav_to_list(self):
-        self.clear_container(self.content_area)
+        self.limpiar_contenedor(self.content_area)
         ListingsView(self.content_area, self.vault, navigate_to_form=self.nav_to_form).pack(fill="both", expand=True)
 
     def nav_to_form(self, record=None):
-        self.clear_container(self.content_area)
-        # Si se navega atrás, vuelve a enrutar a la lista
+        self.limpiar_contenedor(self.content_area)
         FormView(self.content_area, self.vault, record, navigate_back=lambda: self.nav_btns[0].invoke()).pack(
             fill="both", expand=True)
 
     def nav_to_generator(self):
-        self.clear_container(self.content_area)
+        self.limpiar_contenedor(self.content_area)
         GeneratorView(self.content_area, self.vault).pack(fill="both", expand=True)
 
 
